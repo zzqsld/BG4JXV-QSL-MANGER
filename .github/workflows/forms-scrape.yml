@@ -37,13 +37,15 @@ jobs:
           if-no-files-found: error
 
       # 可选：推送到 tag/release 以便客户端下载
-      - name: Publish release asset
+      - name: Publish release asset (overwrite)
         if: ${{ success() }}
-        uses: softprops/action-gh-release@v2
+        uses: ncipollo/release-action@v1
         with:
-          tag_name: data-latest
+          tag: data-latest
           name: Latest Form Entries
           prerelease: true
-          files: data/form_entries.json
+          allowUpdates: true
+          replacesArtifacts: true
+          artifacts: data/form_entries.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
