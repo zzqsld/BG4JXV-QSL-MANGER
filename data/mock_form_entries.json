@@ -1,0 +1,14 @@
+[
+  {
+    "name": "张三",
+    "callsign": "BI1XYZ",
+    "password": "abc123",
+    "submittedAt": "2025-01-01T12:00:00.000Z"
+  },
+  {
+    "name": "测试用户",
+    "callsign": "B1",
+    "password": "9VO6UX",
+    "submittedAt": "2025-12-10T14:10:00.000Z"
+  }
+]

@@ -1,0 +1,8 @@
+server/node_modules/
+node_modules/
+keys/
+*.pem
+*.key
+*.enc.json
+data/state.json
+data/qsl.log

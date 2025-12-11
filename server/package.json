@@ -1,0 +1,19 @@
+{
+  "name": "qsl-card-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "poll": "node poller.js",
+    "export:forms": "node export_form_entries.js",
+    "encrypt:asset": "node encrypt_release.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "@azure/msal-node": "1.14.5",
+    "node-fetch": "^2.7.0",
+    "xlsx": "^0.18.5"
+  }
+}
