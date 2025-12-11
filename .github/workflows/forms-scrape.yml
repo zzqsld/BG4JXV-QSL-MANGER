@@ -1,0 +1,49 @@
+name: scrape-forms
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 2 * * *"  # UTC 02:00 daily
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install deps
+        working-directory: server
+        run: npm ci
+
+      - name: Run export (scrape)
+        working-directory: server
+        env:
+          ANALYSIS_PAGE_URL: ${{ secrets.ANALYSIS_PAGE_URL }}
+        run: npm run export:forms -- --out=../data/form_entries.json
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: form-entries
+          path: data/form_entries.json
+          if-no-files-found: error
+
+      # 可选：推送到 tag/release 以便客户端下载
+      - name: Publish release asset
+        if: ${{ success() }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: data-latest
+          name: Latest Form Entries
+          prerelease: true
+          files: data/form_entries.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
