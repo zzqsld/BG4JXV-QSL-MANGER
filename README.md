@@ -65,3 +65,8 @@
    node encrypt_release.js --mode=decrypt --in=../dist/app.enc.json --out=../dist/app.zip --priv=../keys/private.pem
    ```
    发布时只上传加密文件，私钥保存在本地即可公开仓库。
+
+## 轮询数据源优先级
+- `RELEASE_JSON_URL`：指向 GitHub Release 里的 JSON 资产，格式可为 `{ entries: [...] }` 或数组，优先使用。
+- `ANALYSIS_PAGE_URL`：Microsoft Forms 分析页抓取（HTML 解析）。
+- 兜底：`data/mock_form_entries.json`。

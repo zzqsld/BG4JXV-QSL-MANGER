@@ -6,7 +6,7 @@ const { logInfo, logError } = require('./logger');
 
 const FORM_MOCK_PATH = path.join(__dirname, '..', 'data', 'mock_form_entries.json');
 
-const { ANALYSIS_PAGE_URL } = process.env;
+const { ANALYSIS_PAGE_URL, RELEASE_JSON_URL } = process.env;
 
 async function fetchWithRetry(url, attempts = 3, options = {}) {
   let lastErr = null;
@@ -103,6 +103,25 @@ async function fetchFormEntriesFromAnalysisPage() {
 
 }
 
+async function fetchFormEntriesFromRelease() {
+  if (!RELEASE_JSON_URL) return null;
+  const buf = await fetchWithRetry(RELEASE_JSON_URL, 3, { headers: { Accept: 'application/json,text/plain' } });
+  const text = Buffer.from(buf).toString('utf8');
+
+  let payload;
+  try {
+    payload = JSON.parse(text);
+  } catch (err) {
+    await logError(`[poller] release json parse failed: ${err.message}`);
+    return [];
+  }
+
+  // 支持两种结构：{entries: [...]} 或直接是数组
+  const entries = Array.isArray(payload) ? payload : Array.isArray(payload.entries) ? payload.entries : [];
+  await logInfo(`[poller] release entries count=${entries.length}`);
+  return entries;
+}
+
 async function fetchFormEntriesFromMock() {
   try {
     const raw = await fs.readFile(FORM_MOCK_PATH, 'utf8');
@@ -115,6 +134,7 @@ async function fetchFormEntriesFromMock() {
 }
 
 async function fetchFormEntries() {
+  if (RELEASE_JSON_URL) return fetchFormEntriesFromRelease();
   if (ANALYSIS_PAGE_URL) return fetchFormEntriesFromAnalysisPage();
   return fetchFormEntriesFromMock();
 }
