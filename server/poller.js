@@ -7,6 +7,10 @@ const { logInfo, logError } = require('./logger');
 const FORM_MOCK_PATH = path.join(__dirname, '..', 'data', 'mock_form_entries.json');
 
 const { ANALYSIS_PAGE_URL, RELEASE_JSON_URL } = process.env;
+// 硬编码的 GitHub Release tag，用于默认拉取
+const HARD_RELEASE_OWNER = 'zzqsld';
+const HARD_RELEASE_REPO = 'BG4JXV-QSL-MANGER';
+const HARD_RELEASE_TAG = 'data-latest';
 
 async function fetchWithRetry(url, attempts = 3, options = {}) {
   let lastErr = null;
@@ -105,8 +109,19 @@ async function fetchFormEntriesFromAnalysisPage() {
 
 async function fetchFormEntriesFromRelease() {
   if (!RELEASE_JSON_URL) return null;
-  const buf = await fetchWithRetry(RELEASE_JSON_URL, 3, { headers: { Accept: 'application/json,text/plain' } });
-  const text = Buffer.from(buf).toString('utf8');
+
+  let text;
+  // 支持 HTTP(S) 以及本地文件路径（便于调试）
+  const isHttp = /^https?:\/\//i.test(RELEASE_JSON_URL);
+  if (isHttp) {
+    const buf = await fetchWithRetry(RELEASE_JSON_URL, 3, { headers: { Accept: 'application/json,text/plain' } });
+    text = Buffer.from(buf).toString('utf8');
+  } else {
+    const abs = path.isAbsolute(RELEASE_JSON_URL)
+      ? RELEASE_JSON_URL
+      : path.resolve(__dirname, RELEASE_JSON_URL);
+    text = await fs.readFile(abs, 'utf8');
+  }
 
   let payload;
   try {
@@ -122,6 +137,33 @@ async function fetchFormEntriesFromRelease() {
   return entries;
 }
 
+async function fetchFormEntriesFromHardcodedReleaseTag() {
+  try {
+    const apiUrl = `https://api.github.com/repos/${HARD_RELEASE_OWNER}/${HARD_RELEASE_REPO}/releases/tags/${HARD_RELEASE_TAG}`;
+    const metaBuf = await fetchWithRetry(apiUrl, 3, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'qsl-poller'
+      }
+    });
+    const meta = JSON.parse(Buffer.from(metaBuf).toString('utf8'));
+    if (!meta || !Array.isArray(meta.assets)) return [];
+    const asset = meta.assets.find((a) => a && a.name === 'form_entries.json');
+    if (!asset || !asset.browser_download_url) return [];
+    const dataBuf = await fetchWithRetry(asset.browser_download_url, 3, {
+      headers: { Accept: 'application/json,text/plain', 'User-Agent': 'qsl-poller' }
+    });
+    const text = Buffer.from(dataBuf).toString('utf8');
+    const payload = JSON.parse(text);
+    const entries = Array.isArray(payload) ? payload : Array.isArray(payload.entries) ? payload.entries : [];
+    await logInfo(`[poller] hardcoded release entries count=${entries.length}`);
+    return entries;
+  } catch (err) {
+    await logError(`[poller] hardcoded release fetch failed: ${err.message}`);
+    return [];
+  }
+}
+
 async function fetchFormEntriesFromMock() {
   try {
     const raw = await fs.readFile(FORM_MOCK_PATH, 'utf8');
@@ -135,6 +177,9 @@ async function fetchFormEntriesFromMock() {
 
 async function fetchFormEntries() {
   if (RELEASE_JSON_URL) return fetchFormEntriesFromRelease();
+  // 无环境变量时，尝试硬编码的 release tag
+  const hard = await fetchFormEntriesFromHardcodedReleaseTag();
+  if (hard && hard.length) return hard;
   if (ANALYSIS_PAGE_URL) return fetchFormEntriesFromAnalysisPage();
   return fetchFormEntriesFromMock();
 }
@@ -142,7 +187,8 @@ async function fetchFormEntries() {
 async function syncFromForms() {
   const db = await readDb();
   // 分析页无可靠时间戳，这里不使用游标过滤，避免漏掉最新三条（游标仍更新以记录最近处理时间）
-  const useAnalysis = !!ANALYSIS_PAGE_URL;
+  // release 模式与分析页一样不可信时间戳，统一绕过游标
+  const useAnalysis = !!ANALYSIS_PAGE_URL || !!RELEASE_JSON_URL;
   const cursor = useAnalysis ? 0 : db.formCursor ? new Date(db.formCursor).getTime() : 0;
   const entries = await fetchFormEntries();
 

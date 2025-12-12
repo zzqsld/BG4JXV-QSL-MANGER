@@ -5,8 +5,6 @@
   "type": "commonjs",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "poll": "node poller.js",
     "export:forms": "node export_form_entries.js",
     "encrypt:asset": "node encrypt_release.js"
   },
