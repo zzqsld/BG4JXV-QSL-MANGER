@@ -1,48 +1,45 @@
-# QSL 表单爬取（精简版）
+# QSL 卡片签收基础版
 
-此仓库已精简，仅保留爬取与发布相关脚本，方便在 GitHub Actions 上定时抓取并将结果作为 release 资产提供下载。网页与后端服务端代码已移除，避免泄露本地密钥与降低维护复杂度。
+一个简单的三端雏形：
+- **表单端（外部）**：使用 Microsoft Forms 收集姓名（可选）、呼号（必填）、密码（写在信封内）。
+- **服务端**：Node + Express，记录寄出、保存签收码、提供状态查询，并可与表单轮询脚本共享本地 JSON 存储。
+- **用户端 UI**：自带响应式 Web 页面，可在 Windows 浏览器和安卓浏览器中使用。
 
-## 目录与脚本
-- `server/export_form_entries.js`：抓取脚本，输出 JSON（默认 `data/form_entries.json`）。
-- `server/encrypt_release.js`：加密/解密发布物（本地持有私钥，仓库仅公开加密文件）。
-- `.github/workflows/forms-scrape.yml`：定时/手动运行抓取并发布到 tag `data-latest`。
+> 当前代码不包含真实的 Microsoft Forms 抓取逻辑，`server/poller.js` 里提供了接口和一个本地 `data/mock_form_entries.json` 示例。替换抓取逻辑后即可定时同步。
 
-## 本地运行（仅用于你自己的机器）
-```powershell
-cd server
-npm install
-set ANALYSIS_PAGE_URL=https://...  # 如需直接抓取分析页
-npm run export:forms -- --out=../data/form_entries.json
-```
+## 运行方式
+1. 安装依赖（在 `server` 目录）：
+   ```powershell
+   cd server
+   npm install
+   npm start  # http://localhost:4000
+   ```
+   服务器会同时服务 `web/` 目录作为前端。
 
-## 发布到 Release（GitHub Actions）
-工作流已配置为：checkout → Node 18 → `npm ci` → `npm run export:forms` → 上传产物到 tag `data-latest`。
+2. 寄出登记
+   - 打开网页，输入呼号、（可选）姓名、信封内密码。
+   - 服务端会生成 6 位签收码，记录寄出时间，状态为 `sent`。
 
-## 发行加密（可选）
-```powershell
-mkdir keys
-openssl genrsa -out keys/private.pem 2048
-openssl rsa -in keys/private.pem -pubout -out keys/public.pem
-npm run encrypt:asset -- --in=../data/form_entries.json --out=../data/form_entries.enc.json --pub=../keys/public.pem
-```
-仅上传加密文件，私钥留本地。
+3. 签收同步
+   - 运行一次：`npm run poll`（在 `server` 目录）。
+   - 逻辑：读取 `data/mock_form_entries.json`，按呼号/密码匹配后将状态标记为 `received`。
+   - 可用操作系统的计划任务（如 Windows 任务计划程序）每小时执行一次。
 
-## 轮询数据源优先级
-- `RELEASE_JSON_URL`：指向 GitHub Release 的 JSON 资产（或本地文件）。
-- `ANALYSIS_PAGE_URL`：Microsoft Forms 分析页。
-- 兜底：`data/mock_form_entries.json`。
-未设置 `RELEASE_JSON_URL` 时，系统默认尝试硬编码的 tag：`zzqsld/BG4JXV-QSL-MANGER@data-latest`。
+4. 手动签收
+   - 页面右侧的“手动签收”可在异常情况下直接标记为已签收。
 
-## 本地密钥使用（仅本地，不提交到仓库）
-在 Windows PowerShell 设置令牌（后端触发 Actions 时使用）：
-```powershell
-$env:SERVER_GITHUB_TOKEN = "<你的 Fine-grained Token>"
-```
-或永久：
-```powershell
-setx SERVER_GITHUB_TOKEN "<你的 Fine-grained Token>"
-```
-切勿将令牌写入代码或提交到仓库。
+## 文件说明
+- `data/state.json`：本地状态存储（呼号、密码、签收码、时间戳等）。
+- `data/mock_form_entries.json`：模拟的 Microsoft Forms 返回数据列表。
+- `server/index.js`：HTTP API 与静态文件服务。
+- `server/poller.js`：表单轮询逻辑（需替换抓取实现）。
+- `web/index.html`：响应式前端界面。
+
+## 下一步可做
+- 将 `fetchFormEntries` 替换为 Microsoft Graph / Forms 抓取逻辑，并安全存储凭据。
+- 增加签收码比对（表单里回填签收码），或生成 PDF/打印标签。
+- 加入导出 CSV / Excel、分批过滤、短信或邮件通知。
+- 部署到免费平台：静态前端可放 GitHub Pages / Cloudflare Pages；后端可用 Cloudflare Workers + KV、Deta Space、Render 免费实例等。
 
 ## 新增脚本
 - 表单导出：在 `server` 目录运行
@@ -70,12 +67,6 @@ setx SERVER_GITHUB_TOKEN "<你的 Fine-grained Token>"
    发布时只上传加密文件，私钥保存在本地即可公开仓库。
 
 ## 轮询数据源优先级
-- `RELEASE_JSON_URL`：指向 GitHub Release 里的 JSON 资产（或本地文件），格式可为 `{ entries: [...] }` 或数组，优先使用。
+- `RELEASE_JSON_URL`：指向 GitHub Release 里的 JSON 资产，格式可为 `{ entries: [...] }` 或数组，优先使用。
 - `ANALYSIS_PAGE_URL`：Microsoft Forms 分析页抓取（HTML 解析）。
 - 兜底：`data/mock_form_entries.json`。
-
-当未设置 `RELEASE_JSON_URL` 时，系统会默认尝试硬编码的 tag：
-`zzqsld/BG4JXV-QSL-MANGER@data-latest`，自动通过 GitHub API 找到资产 `form_entries.json` 并拉取。
-
-## 网页签收码验证
-新增“签收码验证签收”表单：输入呼号与签收码直接校验并标记为已签收（与轮询逻辑一致）。

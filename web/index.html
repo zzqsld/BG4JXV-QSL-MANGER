@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QSL 卡片签收</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --accent: #22d3ee;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --danger: #f87171;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: radial-gradient(circle at 20% 20%, rgba(34,211,238,0.08), transparent 35%),
+                  radial-gradient(circle at 80% 0%, rgba(56,189,248,0.07), transparent 30%),
+                  var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    header {
+      padding: 18px 20px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+      justify-content: space-between;
+    }
+    h1 { margin: 0; font-size: 20px; letter-spacing: 0.4px; }
+    .container { padding: 0 20px 28px; max-width: 1080px; margin: 0 auto; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+    .card {
+      background: linear-gradient(145deg, #0b1221, #0c1426);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+    }
+    .card h2 { margin: 0 0 12px; font-size: 16px; letter-spacing: 0.2px; }
+    label { display: block; margin: 10px 0 4px; font-size: 13px; color: var(--muted); }
+    input, button {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.08);
+      padding: 10px 12px;
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      font-size: 14px;
+    }
+    button {
+      margin-top: 12px;
+      cursor: pointer;
+      background: linear-gradient(120deg, #22d3ee, #3b82f6);
+      border: none;
+      font-weight: 600;
+      letter-spacing: 0.2px;
+      transition: transform 120ms ease, box-shadow 120ms ease;
+    }
+    button:hover { transform: translateY(-1px); box-shadow: 0 12px 30px rgba(34,211,238,0.25); }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { text-align: left; padding: 8px 6px; font-size: 13px; }
+    th { color: var(--muted); font-weight: 500; }
+    tr { border-bottom: 1px solid rgba(255,255,255,0.04); }
+    .pill { padding: 4px 8px; border-radius: 999px; font-size: 12px; display: inline-block; }
+    .pill.sent { background: rgba(34,211,238,0.14); color: #38bdf8; }
+    .pill.received { background: rgba(74,222,128,0.14); color: #4ade80; }
+    .pill.unknown { background: rgba(248,113,113,0.14); color: #fca5a5; }
+    .muted { color: var(--muted); font-size: 12px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .inline-btn { width: auto; padding: 8px 10px; }
+    .warn { cursor: help; }
+    .warn-actions { display: flex; gap: 6px; margin-top: 6px; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>QSL 卡片签收面板</h1>
+    <div class="row">
+      <button class="inline-btn" id="refreshBtn">刷新状态</button>
+      <span class="muted" id="lastSync">—</span>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="grid">
+      <section class="card">
+        <h2>寄出登记</h2>
+        <p class="muted">输入呼号即可，系统自动生成 6 位签收码并记录寄出时间。</p>
+        <form id="dispatchForm">
+          <label for="callsign">呼号（必填）</label>
+          <input id="callsign" name="callsign" autocomplete="off" required>
+          <button type="submit">生成签收码并保存</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>手动签收</h2>
+        <p class="muted">遇到异常时可直接将状态标记为已签收。</p>
+        <form id="manualReceivedForm">
+          <label for="rcallsign">呼号（必填）</label>
+          <input id="rcallsign" name="rcallsign" autocomplete="off" required>
+          <button type="submit">标记为已签收</button>
+        </form>
+      </section>
+    </div>
+
+    <section class="card" style="margin-top:16px;">
+      <div class="row" style="justify-content: space-between;">
+        <h2>卡片状态</h2>
+        <span class="muted">自动每小时同步表单，也可手动刷新</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>呼号</th>
+            <th>状态</th>
+            <th>寄出时间</th>
+            <th>签收时间</th>
+            <th>签收码</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="statusRows"></tbody>
+      </table>
+    </section>
+
+    <section class="card" style="margin-top:16px;">
+      <h2>日志与调试</h2>
+      <p class="muted">导出最近日志，或设置最大日志大小（超过后自动裁剪最旧内容，默认 4MB）。</p>
+      <div class="row">
+        <button class="inline-btn" id="downloadLogBtn">导出日志</button>
+        <label for="logSize" style="margin:0;">最大大小 (MB)</label>
+        <input id="logSize" type="number" min="1" step="1" style="width:120px;">
+        <button class="inline-btn" id="saveLogCfgBtn">保存</button>
+        <span class="muted" id="logCfgHint">—</span>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const statusRows = document.getElementById('statusRows');
+    const lastSyncEl = document.getElementById('lastSync');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const downloadLogBtn = document.getElementById('downloadLogBtn');
+    const saveLogCfgBtn = document.getElementById('saveLogCfgBtn');
+    const logSizeInput = document.getElementById('logSize');
+    const logCfgHint = document.getElementById('logCfgHint');
+    let refreshing = false;
+
+    async function fetchStatuses() {
+      const res = await fetch('/api/status');
+      const data = await res.json();
+      renderStatuses(data);
+      lastSyncEl.textContent = '上次刷新：' + new Date().toLocaleString();
+    }
+
+    function pill(status) {
+      if (status === 'received') return '<span class="pill received">已签收</span>';
+      if (status === 'sent') return '<span class="pill sent">已寄出</span>';
+      return '<span class="pill unknown">未知</span>';
+    }
+
+    function renderStatuses(list) {
+      statusRows.innerHTML = list.map(item => `
+        <tr>
+          <td>${item.callsign || ''}</td>
+          <td>${pill(item.status)}</td>
+          <td>${item.sentAt ? new Date(item.sentAt).toLocaleString() : ''}</td>
+          <td>${item.receivedAt ? new Date(item.receivedAt).toLocaleString() : ''}</td>
+          <td>${item.dispatchCode || ''}</td>
+          <td>${warningCell(item)}</td>
+        </tr>
+      `).join('');
+    }
+
+    function warningCell(item) {
+      if (!item.warning) return '';
+      if (item.warning.type === 'code-mismatch') {
+        return `
+          <span class="warn" title="签收码校验失败：${item.warning.code || ''}">⚠️</span>
+          <div class="warn-actions">
+            <button type="button" class="inline-btn" data-action="ignore" data-callsign="${item.callsign}">忽略</button>
+            <button type="button" class="inline-btn" data-action="confirm" data-callsign="${item.callsign}">确认签收</button>
+          </div>
+        `;
+      }
+      return '';
+    }
+
+    document.getElementById('dispatchForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const callsign = document.getElementById('callsign').value;
+      const res = await fetch('/api/dispatch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ callsign })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        alert(`已生成\n签收码：${data.dispatchCode}`);
+        e.target.reset();
+        fetchStatuses();
+      } else {
+        const err = await res.json();
+        alert(err.error || '保存失败');
+      }
+    });
+
+    document.getElementById('manualReceivedForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const callsign = document.getElementById('rcallsign').value;
+      const res = await fetch('/api/mark-received', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ callsign })
+      });
+      if (res.ok) {
+        alert('已标记为签收');
+        e.target.reset();
+        fetchStatuses();
+      } else {
+        const err = await res.json();
+        alert(err.error || '操作失败');
+      }
+    });
+
+    function setRefreshing(is) {
+      refreshing = is;
+      refreshBtn.disabled = is;
+      refreshBtn.textContent = is ? '刷新中…' : '刷新状态';
+    }
+
+    refreshBtn.addEventListener('click', refreshAll);
+    fetchStatuses();
+
+    async function refreshAll() {
+      if (refreshing) return;
+      setRefreshing(true);
+      try {
+        const res = await fetch('/api/refresh', { method: 'POST' });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || '刷新失败');
+        }
+        const data = await res.json();
+        await fetchStatuses();
+        const ts = data.sync && data.sync.processedAt ? new Date(data.sync.processedAt) : new Date();
+        let hint = '同步完成：' + ts.toLocaleString();
+        if (data.dispatch && data.dispatch.skipped) {
+          hint += '（未触发 GitHub：缺少令牌）';
+        } else {
+          hint += '（已触发 GitHub 工作流）';
+        }
+        lastSyncEl.textContent = hint;
+      } catch (err) {
+        alert(err.message || '刷新失败');
+      } finally {
+        setRefreshing(false);
+      }
+    }
+
+    async function loadLogConfig() {
+      const res = await fetch('/api/log-config');
+      const data = await res.json();
+      const mb = Math.round((data.maxBytes || 0) / (1024 * 1024));
+      logSizeInput.value = mb || 4;
+      logCfgHint.textContent = `当前：${mb || 4} MB`;
+    }
+
+    saveLogCfgBtn.addEventListener('click', async () => {
+      const mb = Number(logSizeInput.value);
+      const bytes = Math.max(1, mb) * 1024 * 1024;
+      const res = await fetch('/api/log-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ maxBytes: bytes })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const curr = Math.round((data.maxBytes || 0) / (1024 * 1024));
+        logCfgHint.textContent = `当前：${curr} MB`;
+        alert('已保存日志大小');
+      } else {
+        const err = await res.json();
+        alert(err.error || '保存失败');
+      }
+    });
+
+    downloadLogBtn.addEventListener('click', async () => {
+      const res = await fetch('/api/logs');
+      if (!res.ok) {
+        alert('获取日志失败');
+        return;
+      }
+      const text = await res.text();
+      const blob = new Blob([text], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'qsl.log';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    });
+
+    loadLogConfig();
+
+    statusRows.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-action]');
+      if (!btn) return;
+      const action = btn.getAttribute('data-action');
+      const callsign = btn.getAttribute('data-callsign');
+      const res = await fetch('/api/resolve-warning', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ callsign, action })
+      });
+      if (res.ok) {
+        fetchStatuses();
+      } else {
+        const err = await res.json();
+        alert(err.error || '操作失败');
+      }
+    });
+  </script>
+</body>
+</html>

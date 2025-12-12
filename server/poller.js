@@ -1,8 +1,32 @@
 const fs = require('fs/promises');
 const path = require('path');
 const fetch = require('node-fetch');
-const { normalizeCallsign, readDb, writeDb } = require('./db');
-const { logInfo, logError } = require('./logger');
+
+function tryRequire(modPath, fallback) {
+  try {
+    return require(modPath);
+  } catch (err) {
+    return fallback;
+  }
+}
+
+const db = tryRequire('./db', {
+  readDb: async () => ({ statuses: [], formCursor: null }),
+  writeDb: async () => {},
+  normalizeCallsign: (c) => {
+    if (!c) return null;
+    const s = String(c).trim().toUpperCase();
+    return s || null;
+  }
+});
+
+const logger = tryRequire('./logger', {
+  logInfo: async () => {},
+  logError: async () => {}
+});
+
+const { normalizeCallsign, readDb, writeDb } = db;
+const { logInfo, logError } = logger;
 
 const FORM_MOCK_PATH = path.join(__dirname, '..', 'data', 'mock_form_entries.json');
 
